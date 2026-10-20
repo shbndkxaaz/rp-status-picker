@@ -6,50 +6,43 @@ import { saveSettingsDebounced } from "../../../../script.js";
 
 const extensionName = "rp-status-picker";
 
-// 預設的用戶資料庫（用戶可自行在介面中新增）
+// 預設的用戶資料庫
 const defaultSettings = {
-  charList: ["{{char}}", "{{user}}"],
-  topList: ["白襯衫", "針織毛衣", "水手服", "運動背心", "風衣", "無（赤裸）"],
-  bottomList: ["百褶裙", "牛仔短褲", "OL包臀裙", "運動長褲", "無"],
-  legList: ["黑色連褲襪", "白色過膝襪", "裸足", "蕾絲吊帶襪", "高跟鞋"],
-  itemList: ["手機", "紅酒杯", "筆記本", "雨傘", "手銬", "無"],
-  mindList: ["害羞閃躲", "表面冷淡內心動搖", "警惕防備", "期待又緊張", "順從"]
+  categories: [
+    { key: "charList", label: "角色", placeholder: "輸入角色名（如：小傑）", items: ["{{char}}", "{{user}}"] },
+    { key: "topList", label: "上衣", placeholder: "輸入上衣詞條...", items: ["白襯衫", "針織毛衣", "水手服", "運動背心", "風衣", "無（赤裸）"] },
+    { key: "bottomList", label: "下身", placeholder: "輸入下身詞條...", items: ["百褶裙", "牛仔短褲", "OL包臀裙", "運動長褲", "無"] },
+    { key: "legList", label: "腿部", placeholder: "輸入腿部/鞋襪詞條...", items: ["黑色連褲襪", "白色過膝襪", "裸足", "蕾絲吊帶襪", "高跟鞋"] },
+    { key: "itemList", label: "道具", placeholder: "輸入道具詞條...", items: ["手機", "紅酒杯", "筆記本", "雨傘", "手銬", "無"] },
+    { key: "mindList", label: "心理", placeholder: "輸入心理狀態詞條...", items: ["害羞閃躲", "表面冷淡內心動搖", "警惕防備", "期待又緊張", "順從"] }
+  ]
 };
 
-const categoryMeta = [
-  { key: "charList", label: "角色", placeholder: "輸入角色名（如：小傑）" },
-  { key: "topList", label: "上衣", placeholder: "輸入上衣詞條..." },
-  { key: "bottomList", label: "下身", placeholder: "輸入下身詞條..." },
-  { key: "legList", label: "腿部", placeholder: "輸入腿部/鞋襪詞條..." },
-  { key: "itemList", label: "道具", placeholder: "輸入道具詞條..." },
-  { key: "mindList", label: "心理", placeholder: "輸入心理狀態詞條..." }
-];
-
-// 記錄當前被勾選的項目
-let selectedState = {
-  charList: new Set(),
-  topList: new Set(),
-  bottomList: new Set(),
-  legList: new Set(),
-  itemList: new Set(),
-  mindList: new Set()
-};
-
+// 記錄當前被勾選的項目 (key -> Set)
+let selectedState = {};
 let isDeleteMode = false;
 
 function loadSettings() {
   extension_settings[extensionName] = extension_settings[extensionName] || {};
-  for (const [key, val] of Object.entries(defaultSettings)) {
-    if (!Array.isArray(extension_settings[extensionName][key])) {
-      extension_settings[extensionName][key] = [...val];
-    }
+  
+  // 確保 categories 結構存在
+  if (!Array.isArray(extension_settings[extensionName].categories)) {
+    extension_settings[extensionName].categories = JSON.parse(JSON.stringify(defaultSettings.categories));
   }
+
+  // 初始化選中狀態
+  extension_settings[extensionName].categories.forEach(cat => {
+    if (!selectedState[cat.key]) {
+      selectedState[cat.key] = new Set();
+    }
+  });
 }
 
 // 根據勾選狀態生成最終文字
 function buildOutputText() {
-  const lines = categoryMeta.map(cat => {
-    const picked = Array.from(selectedState[cat.key]);
+  const categories = extension_settings[extensionName].categories || [];
+  const lines = categories.map(cat => {
+    const picked = Array.from(selectedState[cat.key] || []);
     return `${cat.label}：${picked.join("、")}`;
   });
   return `「${lines.join("\n")}」`;
@@ -61,13 +54,15 @@ function updatePreview() {
 
 // 渲染介面與標籤
 function renderCategories() {
-  const settings = extension_settings[extensionName];
+  loadSettings();
+  const categories = extension_settings[extensionName].categories || [];
   const container = $("#rp_picker_categories");
   container.empty();
 
-  categoryMeta.forEach(cat => {
-    const items = settings[cat.key] || [];
+  categories.forEach(cat => {
+    const items = cat.items || [];
     const chipsHtml = items.map(item => {
+      if (!selectedState[cat.key]) selectedState[cat.key] = new Set();
       const isSelected = selectedState[cat.key].has(item);
       const safeItem = $("<div>").text(item).html();
       return `
@@ -79,16 +74,19 @@ function renderCategories() {
     }).join("");
 
     const rowHtml = `
-      <div class="rp-block">
+      <div class="rp-block" data-cat-key="${cat.key}">
         <div class="rp-block-header">
-          <span class="rp-block-title">${cat.label}：</span>
+          <div class="rp-title-area">
+            <span class="rp-block-title">${cat.label}：</span>
+            ${isDeleteMode && cat.key.startsWith('custom_') ? `<button type="button" class="rp-del-row-btn" data-cat="${cat.key}" title="刪除整行">🗑️ 刪除整行</button>` : ''}
+          </div>
           <div class="rp-inline-add">
-            <input type="text" class="rp-input-new" data-cat="${cat.key}" placeholder="${cat.placeholder}" />
+            <input type="text" class="rp-input-new" data-cat="${cat.key}" placeholder="${cat.placeholder || '輸入新詞條...'}" />
             <button type="button" class="rp-btn-add" data-cat="${cat.key}">+ 新增</button>
           </div>
         </div>
         <div class="rp-chip-container">
-          ${chipsHtml || '<span class="rp-empty">尚無詞條</span>'}
+          ${chipsHtml || '<span class="rp-empty">尚無詞條，請在上方新增</span>'}
         </div>
       </div>
     `;
@@ -98,7 +96,7 @@ function renderCategories() {
   updatePreview();
 }
 
-// 初始化外掛 UI（懸浮按鈕與彈窗）
+// 初始化外掛 UI
 function initPluginUI() {
   if ($("#rp_picker_float_btn").length > 0) return;
 
@@ -109,13 +107,14 @@ function initPluginUI() {
     </div>
   `);
 
-  // 2. 彈出式視窗 Modal
+  // 2. 彈出式視窗 Modal（增加新增自訂行的按鈕）
   const modalHtml = `
     <div id="rp_picker_modal" style="display:none;">
       <div class="rp-modal-box">
         <div class="rp-modal-top">
           <b>角色狀態與換裝生成器</b>
-          <div>
+          <div class="rp-top-controls">
+            <button type="button" id="rp_btn_add_category" class="rp-ctrl-btn primary">+ 新增自訂分類</button>
             <button type="button" id="rp_btn_toggle_del" class="rp-ctrl-btn">管理/刪除詞條</button>
             <button type="button" id="rp_btn_close" class="rp-close-btn">✕</button>
           </div>
@@ -153,20 +152,45 @@ function initPluginUI() {
     renderCategories();
   });
 
-  // 點擊標籤：多選切換 或 刪除
+  // 【新功能】用戶自行新增自訂 Key / 行
+  $("#rp_btn_add_category").on("click", () => {
+    const newLabel = prompt("請輸入新分類的名稱（例如：表情、動作、背景）：");
+    if (!newLabel || !newLabel.trim()) return;
+
+    const trimmedLabel = newLabel.trim();
+    const newKey = "custom_" + Date.now();
+
+    const categories = extension_settings[extensionName].categories;
+    categories.push({
+      key: newKey,
+      label: trimmedLabel,
+      placeholder: `輸入${trimmedLabel}詞條...`,
+      items: []
+    });
+
+    selectedState[newKey] = new Set();
+    saveSettingsDebounced();
+    renderCategories();
+    toastr.success(`已新增分類：${trimmedLabel}`);
+  });
+
+  // 【修復】點擊標籤：多選切換 或 刪除單一詞條
   $(document).on("click", ".rp-chip", function () {
     const catKey = $(this).attr("data-cat");
     const val = $(this).attr("data-val");
-    const list = extension_settings[extensionName][catKey];
+    const categories = extension_settings[extensionName].categories;
+    const catObj = categories.find(c => c.key === catKey);
+    if (!catObj) return;
 
     if (isDeleteMode) {
-      extension_settings[extensionName][catKey] = list.filter(x => x !== val);
-      selectedState[catKey].delete(val);
-      saveSettingsDebounced(); // 自動防抖存入本地資料庫
+      catObj.items = catObj.items.filter(x => x !== val);
+      if (selectedState[catKey]) selectedState[catKey].delete(val);
+      saveSettingsDebounced();
       renderCategories();
       return;
     }
 
+    if (!selectedState[catKey]) selectedState[catKey] = new Set();
     if (selectedState[catKey].has(val)) {
       selectedState[catKey].delete(val);
     } else {
@@ -175,24 +199,43 @@ function initPluginUI() {
     renderCategories();
   });
 
-  // 新增自訂詞條到用戶資料庫
+  // 【修復】刪除整行自訂分類
+  $(document).on("click", ".rp-del-row-btn", function () {
+    const catKey = $(this).attr("data-cat");
+    if (!confirm("確定要刪除整個分類行嗎？")) return;
+
+    let categories = extension_settings[extensionName].categories;
+    extension_settings[extensionName].categories = categories.filter(c => c.key !== catKey);
+    delete selectedState[catKey];
+    saveSettingsDebounced();
+    renderCategories();
+    toastr.success("已刪除該分類行");
+  });
+
+  // 【修復】新增自訂詞條到指定分類（點擊 + 新增按鈕）
   $(document).on("click", ".rp-btn-add", function () {
     const catKey = $(this).attr("data-cat");
     const input = $(`.rp-input-new[data-cat="${catKey}"]`);
     const newVal = String(input.val() || "").trim();
     if (!newVal) return;
 
-    const list = extension_settings[extensionName][catKey];
-    if (!list.includes(newVal)) {
-      list.push(newVal);
-      saveSettingsDebounced(); // 自動存入本地
+    const categories = extension_settings[extensionName].categories;
+    const catObj = categories.find(c => c.key === catKey);
+    if (!catObj) return;
+
+    if (!catObj.items.includes(newVal)) {
+      catObj.items.push(newVal);
+      saveSettingsDebounced();
     }
-    selectedState[catKey].add(newVal);
+
+    if (!selectedState[catKey]) selectedState[catKey] = new Set();
+    selectedState[catKey].add(newVal); // 新增後自動勾選
+    
     input.val("");
     renderCategories();
   });
 
-  // 支援按 Enter 鍵新增
+  // 支援按 Enter 鍵快速新增詞條
   $(document).on("keydown", ".rp-input-new", function (e) {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -203,19 +246,20 @@ function initPluginUI() {
 
   // 清空已選
   $("#rp_btn_clear").on("click", () => {
-    Object.keys(selectedState).forEach(k => selectedState[k].clear());
+    Object.keys(selectedState).forEach(k => {
+      if (selectedState[k]) selectedState[k].clear();
+    });
     renderCategories();
   });
 
-  // 【核心功能】按下確定後，浮現在回覆框 (reply blank)
+  // 按下確定後填入回覆框
   $("#rp_btn_confirm").on("click", () => {
     const finalText = $("#rp_picker_preview").val();
-    const replyBox = $("#send_textarea"); // 酒館原生聊天輸入框
+    const replyBox = $("#send_textarea");
     const existing = String(replyBox.val() || "").trim();
 
-    // 將生成的狀態文字追加到輸入框現有文字的下方
     replyBox.val(existing ? `${existing}\n${finalText}` : finalText);
-    replyBox.trigger("input"); // 通知酒館前端更新狀態與輸入框高度
+    replyBox.trigger("input");
     $("#rp_picker_modal").fadeOut(150);
     replyBox.trigger("focus");
     
