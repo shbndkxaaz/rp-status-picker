@@ -9,7 +9,7 @@ const extensionName = "rp-status-picker";
 const defaultSettings = {
   categories: [
     { key: "charList", label: "角色", placeholder: "輸入角色名（如：小傑）", items: ["{{char}}", "{{user}}"] },
-    { key: "topList", label: "上衣", placeholder: "輸入上衣詞條...", items: ["白襯衫", "針織毛衣", "水手服", "運動背心", "風衣", "無（赤裸）"] },
+    { key: "topList", label: "上衣", placeholder: "輸入上衣詞條...", items: ["白襯衫", "針織毛衣", "水手服", "運動背心", "風衣", "無（赤裸）","OL襯衫","緊身衣","乳膠衣","連體衣","死庫水","競泳泳衣","比基尼","微型比基尼","吊帶","抹胸","露臍上衣","西裝外套","風衣","水手服","旗袍","圍裙（真空圍裙）","毛巾","只裹床單","衣服被撕破","衣服半脫","衣服掀起"] },
     { key: "bottomList", label: "下身", placeholder: "輸入下身詞條...", items: ["百褶裙", "牛仔短褲", "OL包臀裙", "運動長褲", "無"] },
     { key: "legList", label: "腿部", placeholder: "輸入腿部/鞋襪詞條...", items: ["黑色連褲襪", "白色過膝襪", "裸足", "蕾絲吊帶襪", "高跟鞋"] },
     { key: "itemList", label: "道具", placeholder: "輸入道具詞條...", items: ["手機", "紅酒杯", "筆記本", "雨傘", "手銬", "無"] },
