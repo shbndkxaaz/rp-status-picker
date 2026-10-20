@@ -6,7 +6,6 @@ import { saveSettingsDebounced } from "../../../../script.js";
 
 const extensionName = "rp-status-picker";
 
-// 預設的用戶資料庫
 const defaultSettings = {
   categories: [
     { key: "charList", label: "角色", placeholder: "輸入角色名（如：小傑）", items: ["{{char}}", "{{user}}"] },
@@ -16,7 +15,7 @@ const defaultSettings = {
     { key: "itemList", label: "道具", placeholder: "輸入道具詞條...", items: ["手機", "紅酒杯", "筆記本", "雨傘", "手銬", "無"] },
     { key: "mindList", label: "心理", placeholder: "輸入心理狀態詞條...", items: ["害羞閃躲", "表面冷淡內心動搖", "警惕防備", "期待又緊張", "順從"] }
   ],
-  buttonPosition: { right: "18px", bottom: "110px" } // 記憶按鈕位置
+  buttonPosition: { right: "18px", bottom: "110px", left: "auto", top: "auto" }
 };
 
 let selectedState = {};
@@ -36,7 +35,6 @@ function loadSettings() {
   });
 }
 
-// 根據勾選狀態生成最終文字
 function buildOutputText() {
   const categories = extension_settings[extensionName].categories || [];
   const lines = categories.map(cat => {
@@ -50,7 +48,6 @@ function updatePreview() {
   $("#rp_picker_preview").val(buildOutputText());
 }
 
-// 渲染介面與標籤
 function renderCategories() {
   loadSettings();
   const categories = extension_settings[extensionName].categories || [];
@@ -94,64 +91,79 @@ function renderCategories() {
   updatePreview();
 }
 
-// 初始化外掛 UI（含懸浮按鈕拖拽邏輯）
 function initPluginUI() {
   if ($("#rp_picker_float_btn").length > 0) return;
 
-  // 1. 讀取保存的位置
   const savedPos = extension_settings[extensionName].buttonPosition || { right: "18px", bottom: "110px" };
-  const posStyle = `right: ${savedPos.right}; bottom: ${savedPos.bottom}; left: ${savedPos.left || 'auto'}; top: ${savedPos.top || 'auto'};`;
-
-  // 2. 畫面懸浮按鈕（支援自由拖拽）
-  $("body").append(`
-    <div id="rp_picker_float_btn" style="${posStyle}" title="按住可拖拽位置，點擊打開">
+  
+  // 建立懸浮按鈕
+  const btnHtml = `
+    <div id="rp_picker_float_btn" title="按住可拖拽位置，點擊打開">
       👗 狀態模板
     </div>
-  `);
+  `;
+  $("body").append(btnHtml);
+  
+  const $btn =$("#rp_picker_float_btn");
+  if (savedPos.left && savedPos.left !== "auto") {
+    $btn.css({ left: savedPos.left, top: savedPos.top, right: "auto", bottom: "auto" });
+  } else {
+    $btn.css({ right: savedPos.right, bottom: savedPos.bottom, left: "auto", top: "auto" });
+  }
 
-  // 3. 拖拽邏輯 (Draggable Floating Button)
-  const btn = document.getElementById("rp_picker_float_btn");
+  // 【完美修復 iPad 觸控與滑鼠拖曳】
+  const el = document.getElementById("rp_picker_float_btn");
   let isDragging = false;
-  let startX, startY, initialX, initialY;
+  let startX, startY, initialLeft, initialTop;
 
-  btn.addEventListener("pointerdown", (e) => {
+  function onTouchStart(e) {
+    const touch = e.touches ? e.touches[0] : e;
     isDragging = false;
-    startX = e.clientX;
-    startY = e.clientY;
-    const rect = btn.getBoundingClientRect();
-    initialX = rect.left;
-    initialY = rect.top;
+    startX = touch.clientX;
+    startY = touch.clientY;
     
-    btn.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  });
+    const rect = el.getBoundingClientRect();
+    initialLeft = rect.left;
+    initialTop = rect.top;
 
-  btn.addEventListener("pointermove", (e) => {
-    if (!e.buttons) return;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+    document.addEventListener("mousemove", onTouchMove);
+    document.addEventListener("mouseup", onTouchEnd);
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("touchend", onTouchEnd);
+  }
+
+  function onTouchMove(e) {
+    const touch = e.touches ? e.touches[0] : e;
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
       isDragging = true;
     }
-    if (isDragging) {
-      let newX = initialX + dx;
-      let newY = initialY + dy;
-      
-      // 限制在畫面範圍內
-      newX = Math.max(10, Math.min(window.innerWidth - btn.offsetWidth - 10, newX));
-      newY = Math.max(10, Math.min(window.innerHeight - btn.offsetHeight - 10, newY));
 
-      btn.style.left = newX + "px";
-      btn.style.top = newY + "px";
-      btn.style.right = "auto";
-      btn.style.bottom = "auto";
+    if (isDragging) {
+      if (e.cancelable) e.preventDefault();
+      let newLeft = initialLeft + dx;
+      let newTop = initialTop + dy;
+
+      newLeft = Math.max(5, Math.min(window.innerWidth - el.offsetWidth - 5, newLeft));
+      newTop = Math.max(5, Math.min(window.innerHeight - el.offsetHeight - 5, newTop));
+
+      el.style.left = newLeft + "px";
+      el.style.top = newTop + "px";
+      el.style.right = "auto";
+      el.style.bottom = "auto";
     }
-  });
+  }
 
-  btn.addEventListener("pointerup", (e) => {
+  function onTouchEnd(e) {
+    document.removeEventListener("mousemove", onTouchMove);
+    document.removeEventListener("mouseup", onTouchEnd);
+    document.removeEventListener("touchmove", onTouchMove);
+    document.removeEventListener("touchend", onTouchEnd);
+
     if (isDragging) {
-      // 儲存拖拽後的位置
-      const rect = btn.getBoundingClientRect();
+      const rect = el.getBoundingClientRect();
       extension_settings[extensionName].buttonPosition = {
         left: rect.left + "px",
         top: rect.top + "px",
@@ -160,14 +172,16 @@ function initPluginUI() {
       };
       saveSettingsDebounced();
     } else {
-      // 如果沒有拖拽，則視為點擊打開彈窗
+      // 點擊打開彈窗
       renderCategories();
       $("#rp_picker_modal").fadeIn(150);
     }
-    btn.releasePointerCapture(e.pointerId);
-  });
+  }
 
-  // 4. 彈出式視窗 Modal
+  el.addEventListener("mousedown", onTouchStart);
+  el.addEventListener("touchstart", onTouchStart, { passive: true });
+
+  // 彈出式視窗 Modal
   const modalHtml = `
     <div id="rp_picker_modal" style="display:none;">
       <div class="rp-modal-box">
@@ -206,7 +220,7 @@ function initPluginUI() {
     renderCategories();
   });
 
-  // 新增自訂分類行 (Key)
+  // 【真正實現】新增自訂分類行 (Key)
   $("#rp_btn_add_category").on("click", () => {
     const newLabel = prompt("請輸入新分類的名稱（例如：表情、動作、背景）：");
     if (!newLabel || !newLabel.trim()) return;
@@ -225,7 +239,7 @@ function initPluginUI() {
     selectedState[newKey] = new Set();
     saveSettingsDebounced();
     renderCategories();
-    toastr.success(`已新增分類：${trimmedLabel}`);
+    if (window.toastr) toastr.success(`已新增分類行：${trimmedLabel}`);
   });
 
   // 點擊標籤：多選切換 或 刪除單一詞條
@@ -263,7 +277,7 @@ function initPluginUI() {
     delete selectedState[catKey];
     saveSettingsDebounced();
     renderCategories();
-    toastr.success("已刪除該分類行");
+    if (window.toastr) toastr.success("已刪除該分類行");
   });
 
   // 新增詞條到指定分類
