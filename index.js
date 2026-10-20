@@ -32,6 +32,10 @@ let isDeleteMode = false;
 function loadSettings() {
   extension_settings[extensionName] = extension_settings[extensionName] || {};
   
+  if (extension_settings[extensionName].globalPrompt === undefined) {
+    extension_settings[extensionName].globalPrompt = defaultSettings.globalPrompt;
+  }
+
   if (!Array.isArray(extension_settings[extensionName].categories)) {
     extension_settings[extensionName].categories = JSON.parse(JSON.stringify(defaultSettings.categories));
   }
@@ -43,13 +47,24 @@ function loadSettings() {
   });
 }
 
+// 根據勾選狀態與全局 Prompt 生成最終組合文本
 function buildOutputText() {
+  loadSettings();
+  const globalPrompt = extension_settings[extensionName].globalPrompt || "";
   const categories = extension_settings[extensionName].categories || [];
+  
   const lines = categories.map(cat => {
     const picked = Array.from(selectedState[cat.key] || []);
     return `${cat.label}：${picked.join("、")}`;
   });
-  return `「${lines.join("\n")}」`;
+
+  const stateText = `「${lines.join("\n")}」`;
+  
+  // 如果有設定全局 Prompt，則自動拼在最前方或最上方
+  if (globalPrompt.trim()) {
+    return `${globalPrompt.trim()}\n${stateText}`;
+  }
+  return stateText;
 }
 
 function updatePreview() {
@@ -100,239 +115,257 @@ function renderCategories() {
 }
 
 function initPluginUI() {
-  try {
-    if ($("#rp_picker_float_btn").length > 0) return;
+  if ($("#rp_picker_float_btn").length > 0) return;
 
-    // 建立懸浮按鈕，強制初始位置在右側安全區，絕對不會跑出畫面
-    const btnHtml = `
-      <div id="rp_picker_float_btn" title="按住可拖拽位置，點擊打開">
-        👗 狀態模板
-      </div>
-    `;
-    $("body").append(btnHtml);
+  loadSettings();
+  const savedPos = extension_settings[extensionName].buttonPosition || { right: "18px", bottom: "110px" };
+  
+  const btnHtml = `
+    <div id="rp_picker_float_btn" title="按住可拖拽位置，點擊打開">
+      👗 狀態模板
+    </div>
+  `;
+  $("body").append(btnHtml);
+  
+  const $btn =$("#rp_picker_float_btn");
+  if (savedPos.left && savedPos.left !== "auto") {
+    $btn.css({ left: savedPos.left, top: savedPos.top, right: "auto", bottom: "auto" });
+  } else {
+    $btn.css({ right: savedPos.right, bottom: savedPos.bottom, left: "auto", top: "auto" });
+  }
+
+  // 拖拽邏輯
+  const el = document.getElementById("rp_picker_float_btn");
+  let isDragging = false;
+  let startX, startY, initialLeft, initialTop;
+
+  function onTouchStart(e) {
+    const touch = e.touches ? e.touches[0] : e;
+    isDragging = false;
+    startX = touch.clientX;
+    startY = touch.clientY;
     
-    const $btn =$("#rp_picker_float_btn");
-    $btn.css({ right: "20px", bottom: "160px", left: "auto", top: "auto" });
+    const rect = el.getBoundingClientRect();
+    initialLeft = rect.left;
+    initialTop = rect.top;
 
-    // 拖拽邏輯
-    const el = document.getElementById("rp_picker_float_btn");
-    let isDragging = false;
-    let startX, startY, initialLeft, initialTop;
+    document.addEventListener("mousemove", onTouchMove);
+    document.addEventListener("mouseup", onTouchEnd);
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("touchend", onTouchEnd);
+  }
 
-    function onTouchStart(e) {
-      const touch = e.touches ? e.touches[0] : e;
-      isDragging = false;
-      startX = touch.clientX;
-      startY = touch.clientY;
-      
+  function onTouchMove(e) {
+    const touch = e.touches ? e.touches[0] : e;
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      isDragging = true;
+    }
+
+    if (isDragging) {
+      if (e.cancelable) e.preventDefault();
+      let newLeft = initialLeft + dx;
+      let newTop = initialTop + dy;
+
+      newLeft = Math.max(5, Math.min(window.innerWidth - el.offsetWidth - 5, newLeft));
+      newTop = Math.max(5, Math.min(window.innerHeight - el.offsetHeight - 5, newTop));
+
+      el.style.left = newLeft + "px";
+      el.style.top = newTop + "px";
+      el.style.right = "auto";
+      el.style.bottom = "auto";
+    }
+  }
+
+  function onTouchEnd() {
+    document.removeEventListener("mousemove", onTouchMove);
+    document.removeEventListener("mouseup", onTouchEnd);
+    document.removeEventListener("touchmove", onTouchMove);
+    document.removeEventListener("touchend", onTouchEnd);
+
+    if (isDragging) {
       const rect = el.getBoundingClientRect();
-      initialLeft = rect.left;
-      initialTop = rect.top;
-
-      document.addEventListener("mousemove", onTouchMove);
-      document.addEventListener("mouseup", onTouchEnd);
-      document.addEventListener("touchmove", onTouchMove, { passive: false });
-      document.addEventListener("touchend", onTouchEnd);
+      extension_settings[extensionName].buttonPosition = {
+        left: rect.left + "px",
+        top: rect.top + "px",
+        right: "auto",
+        bottom: "auto"
+      };
+      saveSettingsDebounced();
+    } else {
+      renderCategories();
+      // 回填當前的全局 Prompt 輸入框數值
+      $("#rp_global_prompt_input").val(extension_settings[extensionName].globalPrompt || "");
+      updatePreview();
+      $("#rp_picker_modal").fadeIn(150);
     }
+  }
 
-    function onTouchMove(e) {
-      const touch = e.touches ? e.touches[0] : e;
-      const dx = touch.clientX - startX;
-      const dy = touch.clientY - startY;
+  el.addEventListener("mousedown", onTouchStart);
+  el.addEventListener("touchstart", onTouchStart, { passive: true });
 
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-        isDragging = true;
-      }
-
-      if (isDragging) {
-        if (e.cancelable) e.preventDefault();
-        let newLeft = initialLeft + dx;
-        let newTop = initialTop + dy;
-
-        newLeft = Math.max(5, Math.min(window.innerWidth - el.offsetWidth - 5, newLeft));
-        newTop = Math.max(5, Math.min(window.innerHeight - el.offsetHeight - 5, newTop));
-
-        el.style.left = newLeft + "px";
-        el.style.top = newTop + "px";
-        el.style.right = "auto";
-        el.style.bottom = "auto";
-      }
-    }
-
-    function onTouchEnd(e) {
-      document.removeEventListener("mousemove", onTouchMove);
-      document.removeEventListener("mouseup", onTouchEnd);
-      document.removeEventListener("touchmove", onTouchMove);
-      document.removeEventListener("touchend", onTouchEnd);
-
-      if (isDragging) {
-        const rect = el.getBoundingClientRect();
-        extension_settings[extensionName].buttonPosition = {
-          left: rect.left + "px",
-          top: rect.top + "px",
-          right: "auto",
-          bottom: "auto"
-        };
-        saveSettingsDebounced();
-      } else {
-        // 點擊打開彈窗
-        renderCategories();
-        $("#rp_picker_modal").fadeIn(150);
-      }
-    }
-
-    el.addEventListener("mousedown", onTouchStart);
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-
-    // 彈出式視窗 Modal
-    if ($("#rp_picker_modal").length === 0) {
-      const modalHtml = `
-        <div id="rp_picker_modal" style="display:none;">
-          <div class="rp-modal-box">
-            <div class="rp-modal-top">
-              <b>角色狀態與換裝生成器</b>
-              <div class="rp-top-controls">
-                <button type="button" id="rp_btn_add_category" class="rp-ctrl-btn primary">+ 新增分類行</button>
-                <button type="button" id="rp_btn_toggle_del" class="rp-ctrl-btn">管理/刪除詞條</button>
-                <button type="button" id="rp_btn_close" class="rp-close-btn">✕</button>
-              </div>
+  // 彈出式視窗 Modal（在頂部加入「全局固定 Prompt」設定行）
+  if ($("#rp_picker_modal").length === 0) {
+    const modalHtml = `
+      <div id="rp_picker_modal" style="display:none;">
+        <div class="rp-modal-box">
+          <div class="rp-modal-top">
+            <b>角色狀態與換裝生成器</b>
+            <div class="rp-top-controls">
+              <button type="button" id="rp_btn_add_category" class="rp-ctrl-btn primary">+ 新增分類行</button>
+              <button type="button" id="rp_btn_toggle_del" class="rp-ctrl-btn">管理/刪除詞條</button>
+              <button type="button" id="rp_btn_close" class="rp-close-btn">✕</button>
             </div>
-            <div class="rp-modal-content" id="rp_picker_categories"></div>
-            <div class="rp-modal-bottom">
-              <textarea id="rp_picker_preview" rows="6"></textarea>
-              <div class="rp-bottom-actions">
-                <button type="button" id="rp_btn_clear" class="rp-act-btn secondary">清空已選</button>
-                <button type="button" id="rp_btn_confirm" class="rp-act-btn primary">確定（填入回覆框）</button>
-              </div>
+          </div>
+          <div class="rp-modal-content">
+            <!-- 新增的全局固定 Prompt 輸入行 -->
+            <div class="rp-global-prompt-block">
+              <label class="rp-block-title">固定 Prompt（每次自動帶入）：</label>
+              <textarea id="rp_global_prompt_input" rows="2" placeholder="輸入每次按下確定時都要自動帶入的全局指令..."></textarea>
+            </div>
+            <div id="rp_picker_categories"></div>
+          </div>
+          <div class="rp-modal-bottom">
+            <textarea id="rp_picker_preview" rows="6"></textarea>
+            <div class="rp-bottom-actions">
+              <button type="button" id="rp_btn_clear" class="rp-act-btn secondary">清空已選</button>
+              <button type="button" id="rp_btn_confirm" class="rp-act-btn primary">確定（填入回覆框）</button>
             </div>
           </div>
         </div>
-      `;
-      $("body").append(modalHtml);
+      </div>
+    `;
+    $("body").append(modalHtml);
+  }
+
+  $("#rp_btn_close").off("click").on("click", () => {
+    isDeleteMode = false;
+    $("#rp_btn_toggle_del").removeClass("active").text("管理/刪除詞條");
+    $("#rp_picker_modal").fadeOut(150);
+  });
+
+  $("#rp_btn_toggle_del").off("click").on("click", function () {
+    isDeleteMode = !isDeleteMode;
+    $(this).toggleClass("active", isDeleteMode);
+    $(this).text(isDeleteMode ? "完成管理" : "管理/刪除詞條");
+    renderCategories();
+  });
+
+  // 監聽全局 Prompt 輸入變化並自動保存
+  $(document).off("input", "#rp_global_prompt_input").on("input", "#rp_global_prompt_input", function() {
+    extension_settings[extensionName].globalPrompt = $(this).val();
+    saveSettingsDebounced();
+    updatePreview();
+  });
+
+  $("#rp_btn_add_category").off("click").on("click", () => {
+    const newLabel = prompt("請輸入新分類的名稱（例如：表情、動作、背景）：");
+    if (!newLabel || !newLabel.trim()) return;
+
+    const trimmedLabel = newLabel.trim();
+    const newKey = "custom_" + Date.now();
+
+    const categories = extension_settings[extensionName].categories;
+    categories.push({
+      key: newKey,
+      label: trimmedLabel,
+      placeholder: `輸入${trimmedLabel}詞條...`,
+      items: []
+    });
+
+    selectedState[newKey] = new Set();
+    saveSettingsDebounced();
+    renderCategories();
+    if (window.toastr) toastr.success(`已新增分類行：${trimmedLabel}`);
+  });
+
+  $(document).off("click", ".rp-chip").on("click", ".rp-chip", function () {
+    const catKey = $(this).attr("data-cat");
+    const val = $(this).attr("data-val");
+    const categories = extension_settings[extensionName].categories;
+    const catObj = categories.find(c => c.key === catKey);
+    if (!catObj) return;
+
+    if (isDeleteMode) {
+      catObj.items = catObj.items.filter(x => x !== val);
+      if (selectedState[catKey]) selectedState[catKey].delete(val);
+      saveSettingsDebounced();
+      renderCategories();
+      return;
     }
 
-    $("#rp_btn_close").off("click").on("click", () => {
-      isDeleteMode = false;
-      $("#rp_btn_toggle_del").removeClass("active").text("管理/刪除詞條");
-      $("#rp_picker_modal").fadeOut(150);
-    });
+    if (!selectedState[catKey]) selectedState[catKey] = new Set();
+    if (selectedState[catKey].has(val)) {
+      selectedState[catKey].delete(val);
+    } else {
+      selectedState[catKey].add(val);
+    }
+    renderCategories();
+  });
 
-    $("#rp_btn_toggle_del").off("click").on("click", function () {
-      isDeleteMode = !isDeleteMode;
-      $(this).toggleClass("active", isDeleteMode);
-      $(this).text(isDeleteMode ? "完成管理" : "管理/刪除詞條");
-      renderCategories();
-    });
+  $(document).off("click", ".rp-del-row-btn").on("click", ".rp-del-row-btn", function () {
+    const catKey = $(this).attr("data-cat");
+    if (!confirm("確定要刪除整個分類行嗎？")) return;
 
-    $("#rp_btn_add_category").off("click").on("click", () => {
-      const newLabel = prompt("請輸入新分類的名稱（例如：表情、動作、背景）：");
-      if (!newLabel || !newLabel.trim()) return;
+    let categories = extension_settings[extensionName].categories;
+    extension_settings[extensionName].categories = categories.filter(c => c.key !== catKey);
+    delete selectedState[catKey];
+    saveSettingsDebounced();
+    renderCategories();
+    if (window.toastr) toastr.success("已刪除該分類行");
+  });
 
-      const trimmedLabel = newLabel.trim();
-      const newKey = "custom_" + Date.now();
+  $(document).off("click", ".rp-btn-add").on("click", ".rp-btn-add", function () {
+    const catKey = $(this).attr("data-cat");
+    const input = $(`.rp-input-new[data-cat="${catKey}"]`);
+    const newVal = String(input.val() || "").trim();
+    if (!newVal) return;
 
-      const categories = extension_settings[extensionName].categories;
-      categories.push({
-        key: newKey,
-        label: trimmedLabel,
-        placeholder: `輸入${trimmedLabel}詞條...`,
-        items: []
-      });
+    const categories = extension_settings[extensionName].categories;
+    const catObj = categories.find(c => c.key === catKey);
+    if (!catObj) return;
 
-      selectedState[newKey] = new Set();
+    if (!catObj.items.includes(newVal)) {
+      catObj.items.push(newVal);
       saveSettingsDebounced();
-      renderCategories();
-      if (window.toastr) toastr.success(`已新增分類行：${trimmedLabel}`);
-    });
+    }
 
-    $(document).off("click", ".rp-chip").on("click", ".rp-chip", function () {
+    if (!selectedState[catKey]) selectedState[catKey] = new Set();
+    selectedState[catKey].add(newVal);
+    
+    input.val("");
+    renderCategories();
+  });
+
+  $(document).off("keydown", ".rp-input-new").on("keydown", ".rp-input-new", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
       const catKey = $(this).attr("data-cat");
-      const val = $(this).attr("data-val");
-      const categories = extension_settings[extensionName].categories;
-      const catObj = categories.find(c => c.key === catKey);
-      if (!catObj) return;
+      $(`.rp-btn-add[data-cat="${catKey}"]`).trigger("click");
+    }
+  });
 
-      if (isDeleteMode) {
-        catObj.items = catObj.items.filter(x => x !== val);
-        if (selectedState[catKey]) selectedState[catKey].delete(val);
-        saveSettingsDebounced();
-        renderCategories();
-        return;
-      }
-
-      if (!selectedState[catKey]) selectedState[catKey] = new Set();
-      if (selectedState[catKey].has(val)) {
-        selectedState[catKey].delete(val);
-      } else {
-        selectedState[catKey].add(val);
-      }
-      renderCategories();
+  $("#rp_btn_clear").off("click").on("click", () => {
+    Object.keys(selectedState).forEach(k => {
+      if (selectedState[k]) selectedState[k].clear();
     });
+    renderCategories();
+  });
 
-    $(document).off("click", ".rp-del-row-btn").on("click", ".rp-del-row-btn", function () {
-      const catKey = $(this).attr("data-cat");
-      if (!confirm("確定要刪除整個分類行嗎？")) return;
+  $("#rp_btn_confirm").off("click").on("click", () => {
+    const finalText = $("#rp_picker_preview").val();
+    const replyBox = $("#send_textarea");
+    const existing = String(replyBox.val() || "").trim();
 
-      let categories = extension_settings[extensionName].categories;
-      extension_settings[extensionName].categories = categories.filter(c => c.key !== catKey);
-      delete selectedState[catKey];
-      saveSettingsDebounced();
-      renderCategories();
-      if (window.toastr) toastr.success("已刪除該分類行");
-    });
-
-    $(document).off("click", ".rp-btn-add").on("click", ".rp-btn-add", function () {
-      const catKey = $(this).attr("data-cat");
-      const input = $(`.rp-input-new[data-cat="${catKey}"]`);
-      const newVal = String(input.val() || "").trim();
-      if (!newVal) return;
-
-      const categories = extension_settings[extensionName].categories;
-      const catObj = categories.find(c => c.key === catKey);
-      if (!catObj) return;
-
-      if (!catObj.items.includes(newVal)) {
-        catObj.items.push(newVal);
-        saveSettingsDebouncer ? saveSettingsDebouncer() : saveSettingsDebounced();
-      }
-
-      if (!selectedState[catKey]) selectedState[catKey] = new Set();
-      selectedState[catKey].add(newVal);
-      
-      input.val("");
-      renderCategories();
-    });
-
-    $(document).off("keydown", ".rp-input-new").on("keydown", ".rp-input-new", function (e) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const catKey = $(this).attr("data-cat");
-        $(`.rp-btn-add[data-cat="${catKey}"]`).trigger("click");
-      }
-    });
-
-    $("#rp_btn_clear").off("click").on("click", () => {
-      Object.keys(selectedState).forEach(k => {
-        if (selectedState[k]) selectedState[k].clear();
-      });
-      renderCategories();
-    });
-
-    $("#rp_btn_confirm").off("click").on("click", () => {
-      const finalText = $("#rp_picker_preview").val();
-      const replyBox = $("#send_textarea");
-      const existing = String(replyBox.val() || "").trim();
-
-      replyBox.val(existing ? `${existing}\n${finalText}` : finalText);
-      replyBox.trigger("input");
-      $("#rp_picker_modal").fadeOut(150);
-      replyBox.trigger("focus");
-      
-      if (window.toastr) toastr.success("已成功填入聊天輸入框！");
-    });
-  } catch (err) {
-    console.error("[RP Picker] initPluginUI Error:", err);
-  }
+    replyBox.val(existing ? `${existing}\n${finalText}` : finalText);
+    replyBox.trigger("input");
+    $("#rp_picker_modal").fadeOut(150);
+    replyBox.trigger("focus");
+    
+    if (window.toastr) toastr.success("已成功填入聊天輸入框！");
+  });
 }
 
 jQuery(async () => {
