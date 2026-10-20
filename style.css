@@ -64,6 +64,25 @@
   flex: 1;
 }
 
+.rp-global-prompt-block {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #334155;
+}
+
+.rp-global-prompt-block textarea {
+  width: 100%;
+  background: #11131a;
+  color: #93c5fd;
+  border: 1px solid #3b4254;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+  box-sizing: border-box;
+  resize: vertical;
+  margin-top: 6px;
+}
+
 .rp-block {
   margin-bottom: 12px;
   padding-bottom: 10px;
