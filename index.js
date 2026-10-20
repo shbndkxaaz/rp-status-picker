@@ -15,22 +15,20 @@ const defaultSettings = {
     { key: "legList", label: "腿部", placeholder: "輸入腿部/鞋襪詞條...", items: ["黑色連褲襪", "白色過膝襪", "裸足", "蕾絲吊帶襪", "高跟鞋"] },
     { key: "itemList", label: "道具", placeholder: "輸入道具詞條...", items: ["手機", "紅酒杯", "筆記本", "雨傘", "手銬", "無"] },
     { key: "mindList", label: "心理", placeholder: "輸入心理狀態詞條...", items: ["害羞閃躲", "表面冷淡內心動搖", "警惕防備", "期待又緊張", "順從"] }
-  ]
+  ],
+  buttonPosition: { right: "18px", bottom: "110px" } // 記憶按鈕位置
 };
 
-// 記錄當前被勾選的項目 (key -> Set)
 let selectedState = {};
 let isDeleteMode = false;
 
 function loadSettings() {
   extension_settings[extensionName] = extension_settings[extensionName] || {};
   
-  // 確保 categories 結構存在
   if (!Array.isArray(extension_settings[extensionName].categories)) {
     extension_settings[extensionName].categories = JSON.parse(JSON.stringify(defaultSettings.categories));
   }
 
-  // 初始化選中狀態
   extension_settings[extensionName].categories.forEach(cat => {
     if (!selectedState[cat.key]) {
       selectedState[cat.key] = new Set();
@@ -78,7 +76,7 @@ function renderCategories() {
         <div class="rp-block-header">
           <div class="rp-title-area">
             <span class="rp-block-title">${cat.label}：</span>
-            ${isDeleteMode && cat.key.startsWith('custom_') ? `<button type="button" class="rp-del-row-btn" data-cat="${cat.key}" title="刪除整行">🗑️ 刪除整行</button>` : ''}
+            ${isDeleteMode ? `<button type="button" class="rp-del-row-btn" data-cat="${cat.key}" title="刪除整行">🗑️ 刪除整行</button>` : ''}
           </div>
           <div class="rp-inline-add">
             <input type="text" class="rp-input-new" data-cat="${cat.key}" placeholder="${cat.placeholder || '輸入新詞條...'}" />
@@ -96,25 +94,87 @@ function renderCategories() {
   updatePreview();
 }
 
-// 初始化外掛 UI
+// 初始化外掛 UI（含懸浮按鈕拖拽邏輯）
 function initPluginUI() {
   if ($("#rp_picker_float_btn").length > 0) return;
 
-  // 1. 畫面右側懸浮按鈕
+  // 1. 讀取保存的位置
+  const savedPos = extension_settings[extensionName].buttonPosition || { right: "18px", bottom: "110px" };
+  const posStyle = `right: ${savedPos.right}; bottom: ${savedPos.bottom}; left: ${savedPos.left || 'auto'}; top: ${savedPos.top || 'auto'};`;
+
+  // 2. 畫面懸浮按鈕（支援自由拖拽）
   $("body").append(`
-    <div id="rp_picker_float_btn" title="打開 RP 狀態與換裝生成器">
+    <div id="rp_picker_float_btn" style="${posStyle}" title="按住可拖拽位置，點擊打開">
       👗 狀態模板
     </div>
   `);
 
-  // 2. 彈出式視窗 Modal（增加新增自訂行的按鈕）
+  // 3. 拖拽邏輯 (Draggable Floating Button)
+  const btn = document.getElementById("rp_picker_float_btn");
+  let isDragging = false;
+  let startX, startY, initialX, initialY;
+
+  btn.addEventListener("pointerdown", (e) => {
+    isDragging = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = btn.getBoundingClientRect();
+    initialX = rect.left;
+    initialY = rect.top;
+    
+    btn.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  btn.addEventListener("pointermove", (e) => {
+    if (!e.buttons) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      isDragging = true;
+    }
+    if (isDragging) {
+      let newX = initialX + dx;
+      let newY = initialY + dy;
+      
+      // 限制在畫面範圍內
+      newX = Math.max(10, Math.min(window.innerWidth - btn.offsetWidth - 10, newX));
+      newY = Math.max(10, Math.min(window.innerHeight - btn.offsetHeight - 10, newY));
+
+      btn.style.left = newX + "px";
+      btn.style.top = newY + "px";
+      btn.style.right = "auto";
+      btn.style.bottom = "auto";
+    }
+  });
+
+  btn.addEventListener("pointerup", (e) => {
+    if (isDragging) {
+      // 儲存拖拽後的位置
+      const rect = btn.getBoundingClientRect();
+      extension_settings[extensionName].buttonPosition = {
+        left: rect.left + "px",
+        top: rect.top + "px",
+        right: "auto",
+        bottom: "auto"
+      };
+      saveSettingsDebounced();
+    } else {
+      // 如果沒有拖拽，則視為點擊打開彈窗
+      renderCategories();
+      $("#rp_picker_modal").fadeIn(150);
+    }
+    btn.releasePointerCapture(e.pointerId);
+  });
+
+  // 4. 彈出式視窗 Modal
   const modalHtml = `
     <div id="rp_picker_modal" style="display:none;">
       <div class="rp-modal-box">
         <div class="rp-modal-top">
           <b>角色狀態與換裝生成器</b>
           <div class="rp-top-controls">
-            <button type="button" id="rp_btn_add_category" class="rp-ctrl-btn primary">+ 新增自訂分類</button>
+            <button type="button" id="rp_btn_add_category" class="rp-ctrl-btn primary">+ 新增分類行</button>
             <button type="button" id="rp_btn_toggle_del" class="rp-ctrl-btn">管理/刪除詞條</button>
             <button type="button" id="rp_btn_close" class="rp-close-btn">✕</button>
           </div>
@@ -132,12 +192,6 @@ function initPluginUI() {
   `;
   $("body").append(modalHtml);
 
-  // 綁定開關事件
-  $("#rp_picker_float_btn").on("click", () => {
-    renderCategories();
-    $("#rp_picker_modal").fadeIn(150);
-  });
-
   $("#rp_btn_close").on("click", () => {
     isDeleteMode = false;
     $("#rp_btn_toggle_del").removeClass("active").text("管理/刪除詞條");
@@ -152,7 +206,7 @@ function initPluginUI() {
     renderCategories();
   });
 
-  // 【新功能】用戶自行新增自訂 Key / 行
+  // 新增自訂分類行 (Key)
   $("#rp_btn_add_category").on("click", () => {
     const newLabel = prompt("請輸入新分類的名稱（例如：表情、動作、背景）：");
     if (!newLabel || !newLabel.trim()) return;
@@ -174,7 +228,7 @@ function initPluginUI() {
     toastr.success(`已新增分類：${trimmedLabel}`);
   });
 
-  // 【修復】點擊標籤：多選切換 或 刪除單一詞條
+  // 點擊標籤：多選切換 或 刪除單一詞條
   $(document).on("click", ".rp-chip", function () {
     const catKey = $(this).attr("data-cat");
     const val = $(this).attr("data-val");
@@ -199,7 +253,7 @@ function initPluginUI() {
     renderCategories();
   });
 
-  // 【修復】刪除整行自訂分類
+  // 刪除整行分類
   $(document).on("click", ".rp-del-row-btn", function () {
     const catKey = $(this).attr("data-cat");
     if (!confirm("確定要刪除整個分類行嗎？")) return;
@@ -212,7 +266,7 @@ function initPluginUI() {
     toastr.success("已刪除該分類行");
   });
 
-  // 【修復】新增自訂詞條到指定分類（點擊 + 新增按鈕）
+  // 新增詞條到指定分類
   $(document).on("click", ".rp-btn-add", function () {
     const catKey = $(this).attr("data-cat");
     const input = $(`.rp-input-new[data-cat="${catKey}"]`);
@@ -229,7 +283,7 @@ function initPluginUI() {
     }
 
     if (!selectedState[catKey]) selectedState[catKey] = new Set();
-    selectedState[catKey].add(newVal); // 新增後自動勾選
+    selectedState[catKey].add(newVal);
     
     input.val("");
     renderCategories();
