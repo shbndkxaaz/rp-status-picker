@@ -15,7 +15,7 @@ const defaultSettings = {
     { key: "itemList", label: "道具", placeholder: "輸入道具詞條...", items: ["手機", "紅酒杯", "筆記本", "雨傘", "手銬", "無"] },
     { key: "mindList", label: "心理", placeholder: "輸入心理狀態詞條...", items: ["害羞閃躲", "表面冷淡內心動搖", "警惕防備", "期待又緊張", "順從"] }
   ],
-  buttonPosition: { right: "18px", bottom: "110px", left: "auto", top: "auto" }
+  buttonPosition: null // 重置座標，防止卡在螢幕外
 };
 
 let selectedState = {};
@@ -92,247 +92,239 @@ function renderCategories() {
 }
 
 function initPluginUI() {
-  if ($("#rp_picker_float_btn").length > 0) return;
+  try {
+    if ($("#rp_picker_float_btn").length > 0) return;
 
-  const savedPos = extension_settings[extensionName].buttonPosition || { right: "18px", bottom: "110px" };
-  
-  // 建立懸浮按鈕
-  const btnHtml = `
-    <div id="rp_picker_float_btn" title="按住可拖拽位置，點擊打開">
-      👗 狀態模板
-    </div>
-  `;
-  $("body").append(btnHtml);
-  
-  const $btn =$("#rp_picker_float_btn");
-  if (savedPos.left && savedPos.left !== "auto") {
-    $btn.css({ left: savedPos.left, top: savedPos.top, right: "auto", bottom: "auto" });
-  } else {
-    $btn.css({ right: savedPos.right, bottom: savedPos.bottom, left: "auto", top: "auto" });
-  }
-
-  // 【完美修復 iPad 觸控與滑鼠拖曳】
-  const el = document.getElementById("rp_picker_float_btn");
-  let isDragging = false;
-  let startX, startY, initialLeft, initialTop;
-
-  function onTouchStart(e) {
-    const touch = e.touches ? e.touches[0] : e;
-    isDragging = false;
-    startX = touch.clientX;
-    startY = touch.clientY;
-    
-    const rect = el.getBoundingClientRect();
-    initialLeft = rect.left;
-    initialTop = rect.top;
-
-    document.addEventListener("mousemove", onTouchMove);
-    document.addEventListener("mouseup", onTouchEnd);
-    document.addEventListener("touchmove", onTouchMove, { passive: false });
-    document.addEventListener("touchend", onTouchEnd);
-  }
-
-  function onTouchMove(e) {
-    const touch = e.touches ? e.touches[0] : e;
-    const dx = touch.clientX - startX;
-    const dy = touch.clientY - startY;
-
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-      isDragging = true;
-    }
-
-    if (isDragging) {
-      if (e.cancelable) e.preventDefault();
-      let newLeft = initialLeft + dx;
-      let newTop = initialTop + dy;
-
-      newLeft = Math.max(5, Math.min(window.innerWidth - el.offsetWidth - 5, newLeft));
-      newTop = Math.max(5, Math.min(window.innerHeight - el.offsetHeight - 5, newTop));
-
-      el.style.left = newLeft + "px";
-      el.style.top = newTop + "px";
-      el.style.right = "auto";
-      el.style.bottom = "auto";
-    }
-  }
-
-  function onTouchEnd(e) {
-    document.removeEventListener("mousemove", onTouchMove);
-    document.removeEventListener("mouseup", onTouchEnd);
-    document.removeEventListener("touchmove", onTouchMove);
-    document.removeEventListener("touchend", onTouchEnd);
-
-    if (isDragging) {
-      const rect = el.getBoundingClientRect();
-      extension_settings[extensionName].buttonPosition = {
-        left: rect.left + "px",
-        top: rect.top + "px",
-        right: "auto",
-        bottom: "auto"
-      };
-      saveSettingsDebounced();
-    } else {
-      // 點擊打開彈窗
-      renderCategories();
-      $("#rp_picker_modal").fadeIn(150);
-    }
-  }
-
-  el.addEventListener("mousedown", onTouchStart);
-  el.addEventListener("touchstart", onTouchStart, { passive: true });
-
-  // 彈出式視窗 Modal
-  const modalHtml = `
-    <div id="rp_picker_modal" style="display:none;">
-      <div class="rp-modal-box">
-        <div class="rp-modal-top">
-          <b>角色狀態與換裝生成器</b>
-          <div class="rp-top-controls">
-            <button type="button" id="rp_btn_add_category" class="rp-ctrl-btn primary">+ 新增分類行</button>
-            <button type="button" id="rp_btn_toggle_del" class="rp-ctrl-btn">管理/刪除詞條</button>
-            <button type="button" id="rp_btn_close" class="rp-close-btn">✕</button>
-          </div>
-        </div>
-        <div class="rp-modal-content" id="rp_picker_categories"></div>
-        <div class="rp-modal-bottom">
-          <textarea id="rp_picker_preview" rows="6"></textarea>
-          <div class="rp-bottom-actions">
-            <button type="button" id="rp_btn_clear" class="rp-act-btn secondary">清空已選</button>
-            <button type="button" id="rp_btn_confirm" class="rp-act-btn primary">確定（填入回覆框）</button>
-          </div>
-        </div>
+    // 建立懸浮按鈕，強制初始位置在右側安全區，絕對不會跑出畫面
+    const btnHtml = `
+      <div id="rp_picker_float_btn" title="按住可拖拽位置，點擊打開">
+        👗 狀態模板
       </div>
-    </div>
-  `;
-  $("body").append(modalHtml);
+    `;
+    $("body").append(btnHtml);
+    
+    const $btn =$("#rp_picker_float_btn");
+    $btn.css({ right: "20px", bottom: "160px", left: "auto", top: "auto" });
 
-  $("#rp_btn_close").on("click", () => {
-    isDeleteMode = false;
-    $("#rp_btn_toggle_del").removeClass("active").text("管理/刪除詞條");
-    $("#rp_picker_modal").fadeOut(150);
-  });
+    // 拖拽邏輯
+    const el = document.getElementById("rp_picker_float_btn");
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
 
-  // 切換刪除模式
-  $("#rp_btn_toggle_del").on("click", function () {
-    isDeleteMode = !isDeleteMode;
-    $(this).toggleClass("active", isDeleteMode);
-    $(this).text(isDeleteMode ? "完成管理" : "管理/刪除詞條");
-    renderCategories();
-  });
+    function onTouchStart(e) {
+      const touch = e.touches ? e.touches[0] : e;
+      isDragging = false;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      
+      const rect = el.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
 
-  // 【真正實現】新增自訂分類行 (Key)
-  $("#rp_btn_add_category").on("click", () => {
-    const newLabel = prompt("請輸入新分類的名稱（例如：表情、動作、背景）：");
-    if (!newLabel || !newLabel.trim()) return;
+      document.addEventListener("mousemove", onTouchMove);
+      document.addEventListener("mouseup", onTouchEnd);
+      document.addEventListener("touchmove", onTouchMove, { passive: false });
+      document.addEventListener("touchend", onTouchEnd);
+    }
 
-    const trimmedLabel = newLabel.trim();
-    const newKey = "custom_" + Date.now();
+    function onTouchMove(e) {
+      const touch = e.touches ? e.touches[0] : e;
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
 
-    const categories = extension_settings[extensionName].categories;
-    categories.push({
-      key: newKey,
-      label: trimmedLabel,
-      placeholder: `輸入${trimmedLabel}詞條...`,
-      items: []
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        isDragging = true;
+      }
+
+      if (isDragging) {
+        if (e.cancelable) e.preventDefault();
+        let newLeft = initialLeft + dx;
+        let newTop = initialTop + dy;
+
+        newLeft = Math.max(5, Math.min(window.innerWidth - el.offsetWidth - 5, newLeft));
+        newTop = Math.max(5, Math.min(window.innerHeight - el.offsetHeight - 5, newTop));
+
+        el.style.left = newLeft + "px";
+        el.style.top = newTop + "px";
+        el.style.right = "auto";
+        el.style.bottom = "auto";
+      }
+    }
+
+    function onTouchEnd(e) {
+      document.removeEventListener("mousemove", onTouchMove);
+      document.removeEventListener("mouseup", onTouchEnd);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+
+      if (isDragging) {
+        const rect = el.getBoundingClientRect();
+        extension_settings[extensionName].buttonPosition = {
+          left: rect.left + "px",
+          top: rect.top + "px",
+          right: "auto",
+          bottom: "auto"
+        };
+        saveSettingsDebounced();
+      } else {
+        // 點擊打開彈窗
+        renderCategories();
+        $("#rp_picker_modal").fadeIn(150);
+      }
+    }
+
+    el.addEventListener("mousedown", onTouchStart);
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+
+    // 彈出式視窗 Modal
+    if ($("#rp_picker_modal").length === 0) {
+      const modalHtml = `
+        <div id="rp_picker_modal" style="display:none;">
+          <div class="rp-modal-box">
+            <div class="rp-modal-top">
+              <b>角色狀態與換裝生成器</b>
+              <div class="rp-top-controls">
+                <button type="button" id="rp_btn_add_category" class="rp-ctrl-btn primary">+ 新增分類行</button>
+                <button type="button" id="rp_btn_toggle_del" class="rp-ctrl-btn">管理/刪除詞條</button>
+                <button type="button" id="rp_btn_close" class="rp-close-btn">✕</button>
+              </div>
+            </div>
+            <div class="rp-modal-content" id="rp_picker_categories"></div>
+            <div class="rp-modal-bottom">
+              <textarea id="rp_picker_preview" rows="6"></textarea>
+              <div class="rp-bottom-actions">
+                <button type="button" id="rp_btn_clear" class="rp-act-btn secondary">清空已選</button>
+                <button type="button" id="rp_btn_confirm" class="rp-act-btn primary">確定（填入回覆框）</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      $("body").append(modalHtml);
+    }
+
+    $("#rp_btn_close").off("click").on("click", () => {
+      isDeleteMode = false;
+      $("#rp_btn_toggle_del").removeClass("active").text("管理/刪除詞條");
+      $("#rp_picker_modal").fadeOut(150);
     });
 
-    selectedState[newKey] = new Set();
-    saveSettingsDebounced();
-    renderCategories();
-    if (window.toastr) toastr.success(`已新增分類行：${trimmedLabel}`);
-  });
+    $("#rp_btn_toggle_del").off("click").on("click", function () {
+      isDeleteMode = !isDeleteMode;
+      $(this).toggleClass("active", isDeleteMode);
+      $(this).text(isDeleteMode ? "完成管理" : "管理/刪除詞條");
+      renderCategories();
+    });
 
-  // 點擊標籤：多選切換 或 刪除單一詞條
-  $(document).on("click", ".rp-chip", function () {
-    const catKey = $(this).attr("data-cat");
-    const val = $(this).attr("data-val");
-    const categories = extension_settings[extensionName].categories;
-    const catObj = categories.find(c => c.key === catKey);
-    if (!catObj) return;
+    $("#rp_btn_add_category").off("click").on("click", () => {
+      const newLabel = prompt("請輸入新分類的名稱（例如：表情、動作、背景）：");
+      if (!newLabel || !newLabel.trim()) return;
 
-    if (isDeleteMode) {
-      catObj.items = catObj.items.filter(x => x !== val);
-      if (selectedState[catKey]) selectedState[catKey].delete(val);
+      const trimmedLabel = newLabel.trim();
+      const newKey = "custom_" + Date.now();
+
+      const categories = extension_settings[extensionName].categories;
+      categories.push({
+        key: newKey,
+        label: trimmedLabel,
+        placeholder: `輸入${trimmedLabel}詞條...`,
+        items: []
+      });
+
+      selectedState[newKey] = new Set();
       saveSettingsDebounced();
       renderCategories();
-      return;
-    }
-
-    if (!selectedState[catKey]) selectedState[catKey] = new Set();
-    if (selectedState[catKey].has(val)) {
-      selectedState[catKey].delete(val);
-    } else {
-      selectedState[catKey].add(val);
-    }
-    renderCategories();
-  });
-
-  // 刪除整行分類
-  $(document).on("click", ".rp-del-row-btn", function () {
-    const catKey = $(this).attr("data-cat");
-    if (!confirm("確定要刪除整個分類行嗎？")) return;
-
-    let categories = extension_settings[extensionName].categories;
-    extension_settings[extensionName].categories = categories.filter(c => c.key !== catKey);
-    delete selectedState[catKey];
-    saveSettingsDebounced();
-    renderCategories();
-    if (window.toastr) toastr.success("已刪除該分類行");
-  });
-
-  // 新增詞條到指定分類
-  $(document).on("click", ".rp-btn-add", function () {
-    const catKey = $(this).attr("data-cat");
-    const input = $(`.rp-input-new[data-cat="${catKey}"]`);
-    const newVal = String(input.val() || "").trim();
-    if (!newVal) return;
-
-    const categories = extension_settings[extensionName].categories;
-    const catObj = categories.find(c => c.key === catKey);
-    if (!catObj) return;
-
-    if (!catObj.items.includes(newVal)) {
-      catObj.items.push(newVal);
-      saveSettingsDebounced();
-    }
-
-    if (!selectedState[catKey]) selectedState[catKey] = new Set();
-    selectedState[catKey].add(newVal);
-    
-    input.val("");
-    renderCategories();
-  });
-
-  // 支援按 Enter 鍵快速新增詞條
-  $(document).on("keydown", ".rp-input-new", function (e) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const catKey = $(this).attr("data-cat");
-      $(`.rp-btn-add[data-cat="${catKey}"]`).trigger("click");
-    }
-  });
-
-  // 清空已選
-  $("#rp_btn_clear").on("click", () => {
-    Object.keys(selectedState).forEach(k => {
-      if (selectedState[k]) selectedState[k].clear();
+      if (window.toastr) toastr.success(`已新增分類行：${trimmedLabel}`);
     });
-    renderCategories();
-  });
 
-  // 按下確定後填入回覆框
-  $("#rp_btn_confirm").on("click", () => {
-    const finalText = $("#rp_picker_preview").val();
-    const replyBox = $("#send_textarea");
-    const existing = String(replyBox.val() || "").trim();
+    $(document).off("click", ".rp-chip").on("click", ".rp-chip", function () {
+      const catKey = $(this).attr("data-cat");
+      const val = $(this).attr("data-val");
+      const categories = extension_settings[extensionName].categories;
+      const catObj = categories.find(c => c.key === catKey);
+      if (!catObj) return;
 
-    replyBox.val(existing ? `${existing}\n${finalText}` : finalText);
-    replyBox.trigger("input");
-    $("#rp_picker_modal").fadeOut(150);
-    replyBox.trigger("focus");
-    
-    if (window.toastr) toastr.success("已成功填入聊天輸入框！");
-  });
+      if (isDeleteMode) {
+        catObj.items = catObj.items.filter(x => x !== val);
+        if (selectedState[catKey]) selectedState[catKey].delete(val);
+        saveSettingsDebounced();
+        renderCategories();
+        return;
+      }
+
+      if (!selectedState[catKey]) selectedState[catKey] = new Set();
+      if (selectedState[catKey].has(val)) {
+        selectedState[catKey].delete(val);
+      } else {
+        selectedState[catKey].add(val);
+      }
+      renderCategories();
+    });
+
+    $(document).off("click", ".rp-del-row-btn").on("click", ".rp-del-row-btn", function () {
+      const catKey = $(this).attr("data-cat");
+      if (!confirm("確定要刪除整個分類行嗎？")) return;
+
+      let categories = extension_settings[extensionName].categories;
+      extension_settings[extensionName].categories = categories.filter(c => c.key !== catKey);
+      delete selectedState[catKey];
+      saveSettingsDebounced();
+      renderCategories();
+      if (window.toastr) toastr.success("已刪除該分類行");
+    });
+
+    $(document).off("click", ".rp-btn-add").on("click", ".rp-btn-add", function () {
+      const catKey = $(this).attr("data-cat");
+      const input = $(`.rp-input-new[data-cat="${catKey}"]`);
+      const newVal = String(input.val() || "").trim();
+      if (!newVal) return;
+
+      const categories = extension_settings[extensionName].categories;
+      const catObj = categories.find(c => c.key === catKey);
+      if (!catObj) return;
+
+      if (!catObj.items.includes(newVal)) {
+        catObj.items.push(newVal);
+        saveSettingsDebouncer ? saveSettingsDebouncer() : saveSettingsDebounced();
+      }
+
+      if (!selectedState[catKey]) selectedState[catKey] = new Set();
+      selectedState[catKey].add(newVal);
+      
+      input.val("");
+      renderCategories();
+    });
+
+    $(document).off("keydown", ".rp-input-new").on("keydown", ".rp-input-new", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const catKey = $(this).attr("data-cat");
+        $(`.rp-btn-add[data-cat="${catKey}"]`).trigger("click");
+      }
+    });
+
+    $("#rp_btn_clear").off("click").on("click", () => {
+      Object.keys(selectedState).forEach(k => {
+        if (selectedState[k]) selectedState[k].clear();
+      });
+      renderCategories();
+    });
+
+    $("#rp_btn_confirm").off("click").on("click", () => {
+      const finalText = $("#rp_picker_preview").val();
+      const replyBox = $("#send_textarea");
+      const existing = String(replyBox.val() || "").trim();
+
+      replyBox.val(existing ? `${existing}\n${finalText}` : finalText);
+      replyBox.trigger("input");
+      $("#rp_picker_modal").fadeOut(150);
+      replyBox.trigger("focus");
+      
+      if (window.toastr) toastr.success("已成功填入聊天輸入框！");
+    });
+  } catch (err) {
+    console.error("[RP Picker] initPluginUI Error:", err);
+  }
 }
 
 jQuery(async () => {
