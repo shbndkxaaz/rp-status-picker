@@ -43,6 +43,14 @@ function loadSettings() {
 
   if (!Array.isArray(extension_settings[extensionName].categories)) {
     extension_settings[extensionName].categories = JSON.parse(JSON.stringify(defaultSettings.categories));
+  } else {
+    // 【強制補齊機制】檢查 defaultSettings 裡有，但本地存檔裡漏掉的 key，自動補進去！
+    const existingKeys = new Set(extension_settings[extensionName].categories.map(c => c.key));
+    defaultSettings.categories.forEach(defaultCat => {
+      if (!existingKeys.has(defaultCat.key)) {
+        extension_settings[extensionName].categories.push(defaultCat);
+      }
+    });
   }
 
   extension_settings[extensionName].categories.forEach(cat => {
